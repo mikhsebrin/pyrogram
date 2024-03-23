@@ -19,7 +19,7 @@
 import asyncio
 import inspect
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 import pyrogram
 from pyrogram import utils
@@ -39,6 +39,18 @@ from pyrogram.raw.types import (
 )
 
 log = logging.getLogger(__name__)
+
+
+class DuplicateFilter:
+    def __init__(self, len):
+        self.data = deque(maxlen=len)
+
+    async def is_message_unique(self, chat_id, message_id):
+        if (chat_id, message_id) in self.data:
+            return False
+        self.data.append((chat_id, message_id))
+        return True
+
 
 
 class Dispatcher:
@@ -62,6 +74,7 @@ class Dispatcher:
 
         self.updates_queue = asyncio.Queue()
         self.groups = OrderedDict()
+        self.message_duplicate_filter = DuplicateFilter(10000)
 
         async def message_parser(update, users, chats):
             return (
@@ -215,6 +228,15 @@ class Dispatcher:
                     if parser is not None
                     else (None, type(None))
                 )
+
+                try:
+                    chat_id, message_id = parsed_update.chat.id, parsed_update.id 
+                    if await self.message_duplicate_filter.is_message_unique(chat_id=chat_id, message_id=message_id) == False:
+                        continue
+                except AttributeError:
+                    pass
+                except Exception as e:
+                    log.exception(e)
 
                 async with lock:
                     for group in self.groups.values():
