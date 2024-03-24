@@ -42,13 +42,14 @@ log = logging.getLogger(__name__)
 
 
 class DuplicateFilter:
-    def __init__(self, len):
-        self.data = deque(maxlen=len)
+    def __init__(self):
+        self.data = dict()
 
-    async def is_message_unique(self, chat_id, message_id):
-        if (chat_id, message_id) in self.data:
+    def is_message_unique(self, chat_id, message_id):
+        current_max = self.data.get(chat_id)
+        if current_max is not None and current_max >= message_id:
             return False
-        self.data.append((chat_id, message_id))
+        self.data[chat_id] = message_id
         return True
 
 
@@ -74,7 +75,7 @@ class Dispatcher:
 
         self.updates_queue = asyncio.Queue()
         self.groups = OrderedDict()
-        self.message_duplicate_filter = DuplicateFilter(10000)
+        self.message_duplicate_filter = DuplicateFilter()
 
         async def message_parser(update, users, chats):
             return (
@@ -230,8 +231,7 @@ class Dispatcher:
                 )
 
                 try:
-                    chat_id, message_id = parsed_update.chat.id, parsed_update.id 
-                    if await self.message_duplicate_filter.is_message_unique(chat_id=chat_id, message_id=message_id) == False:
+                    if self.message_duplicate_filter.is_message_unique(chat_id=parsed_update.chat.id, message_id=parsed_update.id) == False:
                         continue
                 except AttributeError:
                     pass
